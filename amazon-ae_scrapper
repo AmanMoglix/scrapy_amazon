@@ -1,0 +1,66 @@
+# Main route function to scrape Amazon UAE SKUs
+@scraper_bp.route("/amazon-uae", methods=["POST"])
+def scrape_amazon_uae_skus():
+    data = request.get_json()
+    if not data or "url" not in data:
+        return jsonify({"error": "Invalid URL"}), 400
+
+    url = data["url"]
+    
+    # Fetch the first page to determine the total number of pages
+    soup = get_soup(url)
+    if not soup:
+        return jsonify({"error": "Failed to retrieve the webpage."}), 400
+
+    # Get total number of pages
+    total_pages = get_total_pages(soup)
+    print(f"Total pages found: {total_pages}")
+
+    # Initialize empty results list
+    results = []
+
+    # Start scraping from the first page
+    current_page = 1
+    results = scrape_all_pages(url, current_page, total_pages, results)
+
+    # Return the results as a JSON response
+    return jsonify({"data": results}), 200
+
+
+# Function to get total number of pages
+def get_total_pages(soup):
+    pagination_div = soup.find('div', {'class': 'a-section a-text-center s-pagination-container'})
+    if pagination_div:
+        page_number_span = pagination_div.find('span', {'class': 's-pagination-item s-pagination-disabled'})
+        if page_number_span:
+            return int(page_number_span.get_text(strip=True))
+    return 1  # Default to 1 page if pagination not found
+
+# Recursive function to scrape all pages
+def scrape_all_pages(base_url, current_page, total_pages, results):
+    print(f"Scraping page {current_page} of {total_pages}")
+
+    # Build the URL for the current page
+    if current_page > 1:
+        page_url = f"{base_url}&ref=sr_pg_{current_page}&page={current_page}"
+    else:
+        page_url = base_url  # First page URL
+
+    # Fetch the page soup
+    soup = get_soup(page_url)
+    if not soup:
+        print(f"Failed to retrieve page {current_page}")
+        return results
+
+    # Extract product information from the current page
+    page_results = extract_product_info(soup,base_url,total_pages)
+    results.extend(page_results)
+
+    # If there are more pages, scrape the next page recursively
+    if current_page < total_pages:
+        return scrape_all_pages(base_url, current_page + 1, total_pages, results)
+    
+    return results
+
+# Helper function to extract data from a single page
+def extract_product_info(soup,base_url,total_pages):
